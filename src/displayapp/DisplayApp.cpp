@@ -27,6 +27,7 @@
 #include "displayapp/screens/BatteryInfo.h"
 #include "displayapp/screens/Steps.h"
 #include "displayapp/screens/Dice.h"
+#include "displayapp/screens/PitchReceiver.h"
 #include "displayapp/screens/Weather.h"
 #include "displayapp/screens/PassKey.h"
 #include "displayapp/screens/Error.h"
@@ -368,6 +369,13 @@ void DisplayApp::Refresh() {
         break;
       case Messages::NewNotification:
         LoadNewScreen(Apps::NotificationsPreview, DisplayApp::FullRefreshDirections::Down);
+        break;
+      case Messages::PitchCall:
+        // Only load the screen if not already on PitchReceiver
+        // The Refresh() function will pick up the new signal
+        if (currentApp != Apps::PitchReceiver) {
+          LoadNewScreen(Apps::PitchReceiver, DisplayApp::FullRefreshDirections::Down);
+        }
         break;
       case Messages::TimerDone: {
         if (state != States::Running) {

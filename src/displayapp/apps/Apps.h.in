@@ -29,6 +29,7 @@ namespace Pinetime {
       Calculator,
       Steps,
       Dice,
+      PitchReceiver,
       Weather,
       PassKey,
       QuickSettings,

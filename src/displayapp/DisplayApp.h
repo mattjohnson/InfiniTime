@@ -41,6 +41,7 @@ namespace Pinetime {
     class MotionController;
     class TouchHandler;
     class SimpleWeatherService;
+    class PitchCallService;
   }
 
   namespace System {

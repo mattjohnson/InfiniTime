@@ -231,6 +231,12 @@ void SystemTask::Work() {
             displayApp.PushMessage(Pinetime::Applications::Display::Messages::NewNotification);
           }
           break;
+        case Messages::OnPitchCall:
+          if (IsSleeping()) {
+            GoToRunning();
+          }
+          displayApp.PushMessage(Pinetime::Applications::Display::Messages::PitchCall);
+          break;
         case Messages::SetOffAlarm:
           GoToRunning();
           displayApp.PushMessage(Pinetime::Applications::Display::Messages::AlarmTriggered);

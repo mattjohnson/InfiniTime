@@ -49,6 +49,7 @@ NimbleController::NimbleController(Pinetime::System::SystemTask& systemTask,
     heartRateService {*this, heartRateController},
     motionService {*this, motionController},
     fsService {systemTask, fs},
+    pitchCallService {systemTask},
     serviceDiscovery({&currentTimeClient, &alertNotificationClient}) {
 }
 
@@ -98,6 +99,7 @@ void NimbleController::Init() {
   heartRateService.Init();
   motionService.Init();
   fsService.Init();
+  pitchCallService.Init();
 
   int rc;
   rc = ble_hs_util_ensure_addr(0);
@@ -161,6 +163,7 @@ void NimbleController::StartAdvertising() {
   fields.uuids16 = &HeartRateService::heartRateServiceUuid;
   fields.num_uuids16 = 1;
   fields.uuids16_is_complete = 1;
+  // For now, just advertise DFU service UUID. PitchCallService will be discovered via service discovery.
   fields.uuids128 = &DfuService::serviceUuid;
   fields.num_uuids128 = 1;
   fields.uuids128_is_complete = 1;

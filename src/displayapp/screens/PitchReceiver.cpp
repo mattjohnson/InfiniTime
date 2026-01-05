@@ -14,14 +14,21 @@ namespace {
   constexpr lv_color_t COLOR_DARK = LV_COLOR_MAKE(0x33, 0x33, 0x33);
 
   lv_color_t GetPitchColor(const std::string& pitchCode) {
-    if (pitchCode == "FB" || pitchCode == "2S" || pitchCode == "CT" || pitchCode == "SI") {
+    // Fastballs (red)
+    if (pitchCode == "FB" || pitchCode == "2S" || pitchCode == "CUT" || pitchCode == "SNK") {
       return COLOR_FASTBALL;
     }
+    // Breaking balls (blue)
     if (pitchCode == "CB" || pitchCode == "SL") {
       return COLOR_BREAKING;
     }
-    if (pitchCode == "CH" || pitchCode == "SP") {
+    // Offspeed (green)
+    if (pitchCode == "CH" || pitchCode == "SPL") {
       return COLOR_OFFSPEED;
+    }
+    // Knuckleball/screwball - use white or add a new color
+    if (pitchCode == "KN" || pitchCode == "SCR") {
+      return COLOR_WHITE;
     }
     return COLOR_WHITE;
   }
@@ -47,7 +54,7 @@ PitchReceiver::PitchReceiver(Controllers::PitchCallService& pitchCallService,
   mainLabel = lv_label_create(lv_scr_act(), nullptr);
   lv_label_set_text(mainLabel, "");
   lv_obj_set_style_local_text_color(mainLabel, LV_LABEL_PART_MAIN, LV_STATE_DEFAULT, COLOR_WHITE);
-  lv_obj_set_style_local_text_font(mainLabel, LV_LABEL_PART_MAIN, LV_STATE_DEFAULT, &jetbrains_mono_42);
+  lv_obj_set_style_local_text_font(mainLabel, LV_LABEL_PART_MAIN, LV_STATE_DEFAULT, &jetbrains_mono_32);
   lv_label_set_align(mainLabel, LV_LABEL_ALIGN_CENTER);
   lv_obj_align(mainLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, -40);
   lv_obj_set_hidden(mainLabel, true);
@@ -132,10 +139,10 @@ void PitchReceiver::Refresh() {
         size_t codeEnd = signalStr.find('|', codeStart);
         if (codeEnd != std::string::npos && codeEnd > codeStart) {
           signal.pitchCode = "FB";  // Default
-          // Copy 2-char pitch code
-          if (codeEnd - codeStart == 2) {
-            char code[3] = {data[codeStart], data[codeStart + 1], '\0'};
-            signal.pitchCode = code;
+          // Copy 2-3 char pitch code
+          size_t codeLen = codeEnd - codeStart;
+          if (codeLen >= 2 && codeLen <= 3) {
+            signal.pitchCode = signalStr.substr(codeStart, codeLen);
           }
 
           // Parse zone (single digit after second |)
@@ -211,16 +218,18 @@ void PitchReceiver::ShowSignal(const Controllers::ParsedSignal& signal) {
   lv_obj_set_style_local_text_color(mainLabel, LV_LABEL_PART_MAIN, LV_STATE_DEFAULT, textColor);
   lv_obj_set_style_local_line_color(timerArc, LV_ARC_PART_INDIC, LV_STATE_DEFAULT, textColor);
 
-  lv_obj_align(mainLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, -40);
-
-  lv_label_set_text(subLabel, signal.GetSubText().c_str());
-  lv_obj_set_hidden(subLabel, false);
-  lv_obj_align(subLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, 10);
-
   if (signal.type == Controllers::ParsedSignal::Type::Pitch && signal.zone >= 1 && signal.zone <= 9) {
+    // For pitches with zones: position label higher to make room for grid
+    lv_obj_align(mainLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, -40);
+    lv_obj_set_hidden(subLabel, true);
     lv_obj_set_hidden(zoneGrid, false);
     HighlightZone(signal.zone);
   } else {
+    // For plays: center the label, show sub text, hide grid
+    lv_obj_align(mainLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, -20);
+    lv_label_set_text(subLabel, signal.GetSubText().c_str());
+    lv_obj_set_hidden(subLabel, false);
+    lv_obj_align(subLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, 20);
     lv_obj_set_hidden(zoneGrid, true);
   }
 

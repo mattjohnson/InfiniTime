@@ -98,16 +98,43 @@ ParsedSignal Pinetime::Controllers::ParseSignal(const std::string& signal) {
   
   if (type == "PITCH") {
     result.type = ParsedSignal::Type::Pitch;
-    
-    // Find second delimiter
+
+    // Find second delimiter (after pitch code)
     size_t pos2 = signal.find('|', pos1 + 1);
     if (pos2 != std::string::npos) {
       result.pitchCode = signal.substr(pos1 + 1, pos2 - pos1 - 1);
-      
-      // Parse zone number safely (no exceptions)
-      std::string zoneStr = signal.substr(pos2 + 1);
-      if (!zoneStr.empty() && zoneStr[0] >= '1' && zoneStr[0] <= '9') {
-        result.zone = static_cast<uint8_t>(zoneStr[0] - '0');
+
+      // Find third delimiter (after zone, before optional sign)
+      size_t pos3 = signal.find('|', pos2 + 1);
+
+      // Parse zone number
+      std::string zoneStr;
+      if (pos3 != std::string::npos) {
+        zoneStr = signal.substr(pos2 + 1, pos3 - pos2 - 1);
+      } else {
+        zoneStr = signal.substr(pos2 + 1);
+      }
+
+      if (!zoneStr.empty()) {
+        int zoneVal = 0;
+        for (char c : zoneStr) {
+          if (c >= '0' && c <= '9') {
+            zoneVal = zoneVal * 10 + (c - '0');
+          } else {
+            break;
+          }
+        }
+        if (zoneVal >= 1 && zoneVal <= 13) {
+          result.zone = static_cast<uint8_t>(zoneVal);
+        }
+      }
+
+      // Parse optional sign number (0-5)
+      if (pos3 != std::string::npos && pos3 + 1 < signal.length()) {
+        char signChar = signal[pos3 + 1];
+        if (signChar >= '0' && signChar <= '5') {
+          result.signNumber = static_cast<int8_t>(signChar - '0');
+        }
       }
     }
   } else if (type == "PLAY") {
@@ -121,6 +148,9 @@ ParsedSignal Pinetime::Controllers::ParseSignal(const std::string& signal) {
 std::string ParsedSignal::GetDisplayText() const {
   switch (type) {
     case Type::Pitch:
+      if (hasSign()) {
+        return pitchCode + " " + std::to_string(signNumber);
+      }
       return pitchCode;
     case Type::Play:
       return playCode;
@@ -132,29 +162,32 @@ std::string ParsedSignal::GetDisplayText() const {
 std::string ParsedSignal::GetSubText() const {
   switch (type) {
     case Type::Pitch: {
-      // Return zone with position description
-      std::string zoneText = "Zone " + std::to_string(zone);
-      
-      // Add position helper
+      // Handle ball zones (outside strike zone)
+      if (zone == 10) return "HIGH BALL";
+      if (zone == 11) return "LOW BALL";
+      if (zone == 12) return "INSIDE BALL";
+      if (zone == 13) return "OUTSIDE BALL";
+
+      // Strike zone positions (1-9)
       const char* vert = "";
       const char* horiz = "";
-      
+
       switch ((zone - 1) / 3) {
         case 0: vert = "HIGH"; break;
         case 1: vert = "MID"; break;
         case 2: vert = "LOW"; break;
       }
-      
+
       switch ((zone - 1) % 3) {
         case 0: horiz = "IN"; break;
         case 1: horiz = "MID"; break;
         case 2: horiz = "OUT"; break;
       }
-      
+
       return std::string(vert) + " " + horiz;
     }
     case Type::Play:
-      return "PLAY";
+      return "Play";
     default:
       return "";
   }

@@ -70,12 +70,15 @@ namespace Pinetime {
     // Signal parsing utilities
     struct ParsedSignal {
       enum class Type { Pitch, Play, Unknown };
-      
+
       Type type = Type::Unknown;
       std::string pitchCode;
       uint8_t zone = 0;
+      int8_t signNumber = -1;  // -1 = no sign, 0-5 = valid sign
       std::string playCode;
-      
+
+      bool hasSign() const { return signNumber >= 0 && signNumber <= 5; }
+
       // Display text for the watch screen
       std::string GetDisplayText() const;
       std::string GetSubText() const;

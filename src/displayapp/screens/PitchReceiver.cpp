@@ -5,33 +5,10 @@ using namespace Pinetime::Applications::Screens;
 
 namespace {
   constexpr lv_color_t COLOR_BG = LV_COLOR_MAKE(0x00, 0x00, 0x00);
-  constexpr lv_color_t COLOR_FASTBALL = LV_COLOR_MAKE(0xFF, 0x44, 0x44);
-  constexpr lv_color_t COLOR_BREAKING = LV_COLOR_MAKE(0x44, 0x88, 0xFF);
-  constexpr lv_color_t COLOR_OFFSPEED = LV_COLOR_MAKE(0x44, 0xDD, 0x44);
-  constexpr lv_color_t COLOR_PLAY = LV_COLOR_MAKE(0xFF, 0xAA, 0x00);
   constexpr lv_color_t COLOR_WHITE = LV_COLOR_MAKE(0xFF, 0xFF, 0xFF);
   constexpr lv_color_t COLOR_GRAY = LV_COLOR_MAKE(0x88, 0x88, 0x88);
   constexpr lv_color_t COLOR_DARK = LV_COLOR_MAKE(0x33, 0x33, 0x33);
-
-  lv_color_t GetPitchColor(const std::string& pitchCode) {
-    // Fastballs (red)
-    if (pitchCode == "FB" || pitchCode == "2S" || pitchCode == "CUT" || pitchCode == "SNK") {
-      return COLOR_FASTBALL;
-    }
-    // Breaking balls (blue)
-    if (pitchCode == "CB" || pitchCode == "SL") {
-      return COLOR_BREAKING;
-    }
-    // Offspeed (green)
-    if (pitchCode == "CH" || pitchCode == "SPL") {
-      return COLOR_OFFSPEED;
-    }
-    // Knuckleball/screwball - use white or add a new color
-    if (pitchCode == "KN" || pitchCode == "SCR") {
-      return COLOR_WHITE;
-    }
-    return COLOR_WHITE;
-  }
+  constexpr lv_color_t COLOR_PLAY = LV_COLOR_MAKE(0xFF, 0xAA, 0x00);
 }
 
 PitchReceiver::PitchReceiver(Controllers::PitchCallService& pitchCallService,
@@ -139,17 +116,36 @@ void PitchReceiver::Refresh() {
         size_t codeEnd = signalStr.find('|', codeStart);
         if (codeEnd != std::string::npos && codeEnd > codeStart) {
           signal.pitchCode = "FB";  // Default
-          // Copy 2-3 char pitch code
+          // Copy 1-4 char pitch code
           size_t codeLen = codeEnd - codeStart;
-          if (codeLen >= 2 && codeLen <= 3) {
+          if (codeLen >= 1 && codeLen <= 4) {
             signal.pitchCode = signalStr.substr(codeStart, codeLen);
           }
 
-          // Parse zone (single digit after second |)
-          if (codeEnd + 1 < signalStr.length()) {
-            char zoneChar = data[codeEnd + 1];
-            if (zoneChar >= '1' && zoneChar <= '9') {
-              signal.zone = zoneChar - '0';
+          // Find third delimiter (after zone, before optional sign)
+          size_t zoneStart = codeEnd + 1;
+          size_t zoneEnd = signalStr.find('|', zoneStart);
+
+          // Parse zone (1-2 digits, supports zones 1-13)
+          size_t zoneParseEnd = (zoneEnd != std::string::npos) ? zoneEnd : signalStr.length();
+          int zoneVal = 0;
+          for (size_t i = zoneStart; i < zoneParseEnd; i++) {
+            char c = data[i];
+            if (c >= '0' && c <= '9') {
+              zoneVal = zoneVal * 10 + (c - '0');
+            } else {
+              break;
+            }
+          }
+          if (zoneVal >= 1 && zoneVal <= 13) {
+            signal.zone = static_cast<uint8_t>(zoneVal);
+          }
+
+          // Parse optional sign number (0-5 after third |)
+          if (zoneEnd != std::string::npos && zoneEnd + 1 < signalStr.length()) {
+            char signChar = data[zoneEnd + 1];
+            if (signChar >= '0' && signChar <= '5') {
+              signal.signNumber = static_cast<int8_t>(signChar - '0');
             }
           }
         }
@@ -158,7 +154,14 @@ void PitchReceiver::Refresh() {
                  data[0] == 'P' && data[1] == 'L' && data[2] == 'A' &&
                  data[3] == 'Y' && data[4] == '|') {
         signal.type = Controllers::ParsedSignal::Type::Play;
-        signal.playCode = "PLAY";  // Simple default
+        // Extract play code after "PLAY|"
+        size_t codeStart = 5;
+        size_t codeLen = signalStr.length() - codeStart;
+        if (codeLen > 0 && codeLen <= 16) {
+          signal.playCode = signalStr.substr(codeStart, codeLen);
+        } else {
+          signal.playCode = "PLAY";  // Fallback
+        }
         ShowSignal(signal);
       }
     }
@@ -209,21 +212,25 @@ void PitchReceiver::ShowSignal(const Controllers::ParsedSignal& signal) {
   lv_label_set_text(mainLabel, signal.GetDisplayText().c_str());
   lv_obj_set_hidden(mainLabel, false);
 
-  lv_color_t textColor = COLOR_WHITE;
-  if (signal.type == Controllers::ParsedSignal::Type::Pitch) {
-    textColor = GetPitchColor(signal.pitchCode);
-  } else if (signal.type == Controllers::ParsedSignal::Type::Play) {
-    textColor = COLOR_PLAY;
-  }
+  // Use white for pitches (high contrast on black, good outdoor visibility)
+  // Use orange for plays to distinguish them
+  lv_color_t textColor = (signal.type == Controllers::ParsedSignal::Type::Play) ? COLOR_PLAY : COLOR_WHITE;
   lv_obj_set_style_local_text_color(mainLabel, LV_LABEL_PART_MAIN, LV_STATE_DEFAULT, textColor);
   lv_obj_set_style_local_line_color(timerArc, LV_ARC_PART_INDIC, LV_STATE_DEFAULT, textColor);
 
   if (signal.type == Controllers::ParsedSignal::Type::Pitch && signal.zone >= 1 && signal.zone <= 9) {
-    // For pitches with zones: position label higher to make room for grid
+    // For pitches in strike zone: position label higher to make room for grid
     lv_obj_align(mainLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, -40);
     lv_obj_set_hidden(subLabel, true);
     lv_obj_set_hidden(zoneGrid, false);
     HighlightZone(signal.zone);
+  } else if (signal.type == Controllers::ParsedSignal::Type::Pitch && signal.zone >= 10 && signal.zone <= 13) {
+    // For ball zones (outside strike zone): show text label instead of grid
+    lv_obj_align(mainLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, -20);
+    lv_label_set_text(subLabel, signal.GetSubText().c_str());
+    lv_obj_set_hidden(subLabel, false);
+    lv_obj_align(subLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, 20);
+    lv_obj_set_hidden(zoneGrid, true);
   } else {
     // For plays: center the label, show sub text, hide grid
     lv_obj_align(mainLabel, lv_scr_act(), LV_ALIGN_CENTER, 0, -20);
@@ -267,8 +274,8 @@ void PitchReceiver::HighlightZone(uint8_t zone) {
 
   lv_obj_set_pos(zoneHighlight, x, y);
 
-  lv_color_t color = GetPitchColor(currentSignal.pitchCode);
-  lv_obj_set_style_local_bg_color(zoneHighlight, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, color);
+  // Use white for zone highlight (consistent with pitch text)
+  lv_obj_set_style_local_bg_color(zoneHighlight, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, COLOR_WHITE);
 
   lv_obj_set_hidden(zoneHighlight, false);
 }

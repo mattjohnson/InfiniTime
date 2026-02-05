@@ -2,11 +2,13 @@
 #include <cstring>
 #include <algorithm>
 #include "systemtask/SystemTask.h"
+#include "components/ble/BleController.h"
 
 using namespace Pinetime::Controllers;
 
 constexpr ble_uuid128_t PitchCallService::serviceUuid;
 constexpr ble_uuid128_t PitchCallService::signalCharUuid;
+constexpr ble_uuid128_t PitchCallService::deviceIdCharUuid;
 
 namespace {
   // Static instance pointer for C callback
@@ -19,22 +21,42 @@ namespace {
     }
     return BLE_ATT_ERR_UNLIKELY;
   }
+
+  int DeviceIdReadCallback(uint16_t /*conn_handle*/, uint16_t /*attr_handle*/,
+                           struct ble_gatt_access_ctxt* ctxt, void* /*arg*/) {
+    if (instance != nullptr) {
+      return instance->OnDeviceIdRead(ctxt);
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+  }
 }
 
-PitchCallService::PitchCallService(Pinetime::System::SystemTask& systemTask)
-  : systemTask {systemTask} {
+PitchCallService::PitchCallService(Pinetime::System::SystemTask& systemTask, Pinetime::Controllers::Ble& bleController)
+  : systemTask {systemTask},
+    bleController {bleController} {
   instance = this;
 
-  // Define signal characteristic (write without response)
+  // Define signal characteristic (write requires encryption for security)
+  // BLE_GATT_CHR_F_WRITE_ENC ensures only bonded/paired devices can send signals
   characteristicDefinition[0] = {
     .uuid = reinterpret_cast<const ble_uuid_t*>(&signalCharUuid),
     .access_cb = SignalWriteCallback,
     .arg = this,
-    .flags = BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_CHR_F_WRITE,
+    .flags = BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC,
     .val_handle = &signalHandle
   };
-  characteristicDefinition[1] = {0}; // Terminator
-  
+
+  // Define device ID characteristic (read-only, no encryption needed)
+  characteristicDefinition[1] = {
+    .uuid = reinterpret_cast<const ble_uuid_t*>(&deviceIdCharUuid),
+    .access_cb = DeviceIdReadCallback,
+    .arg = this,
+    .flags = BLE_GATT_CHR_F_READ,
+    .val_handle = nullptr
+  };
+
+  characteristicDefinition[2] = {0}; // Terminator
+
   // Define service
   serviceDefinition[0] = {
     .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -49,11 +71,31 @@ void PitchCallService::Init() {
   if (res != 0) {
     return;
   }
-  
+
   res = ble_gatts_add_svcs(serviceDefinition);
   if (res != 0) {
     return;
   }
+}
+
+void PitchCallService::InitShortId() {
+  if (shortIdInitialized) return;
+
+  const auto& address = bleController.Address();
+  // BLE address is 6 bytes; use last 2 bytes (indices 1 and 0, since address is little-endian)
+  // Format as 4 uppercase hex chars
+  static const char hexChars[] = "0123456789ABCDEF";
+  shortId[0] = hexChars[(address[1] >> 4) & 0x0F];
+  shortId[1] = hexChars[address[1] & 0x0F];
+  shortId[2] = hexChars[(address[0] >> 4) & 0x0F];
+  shortId[3] = hexChars[address[0] & 0x0F];
+  shortId[4] = '\0';
+  shortIdInitialized = true;
+}
+
+const char* PitchCallService::GetShortId() {
+  InitShortId();
+  return shortId;
 }
 
 void PitchCallService::SetSignalCallback(SignalCallback callback) {
@@ -69,6 +111,12 @@ int PitchCallService::OnSignalWrite(struct ble_gatt_access_ctxt* ctxt) {
       memcpy(buffer, ctxt->om->om_data, len);
 
       lastSignal = std::string(buffer, len);
+
+      // CONNECT is a handshake to trigger pairing - don't wake the screen
+      if (lastSignal == "CONNECT") {
+        return 0;
+      }
+
       hasUnreadSignal = true;
 
       // Invoke callback if set
@@ -84,18 +132,27 @@ int PitchCallService::OnSignalWrite(struct ble_gatt_access_ctxt* ctxt) {
   return BLE_ATT_ERR_UNLIKELY;
 }
 
+int PitchCallService::OnDeviceIdRead(struct ble_gatt_access_ctxt* ctxt) {
+  if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+    InitShortId();
+    int res = os_mbuf_append(ctxt->om, shortId, 4);
+    return (res == 0) ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+  }
+  return BLE_ATT_ERR_UNLIKELY;
+}
+
 // Signal parsing implementation
 ParsedSignal Pinetime::Controllers::ParseSignal(const std::string& signal) {
   ParsedSignal result;
-  
+
   // Find first delimiter
   size_t pos1 = signal.find('|');
   if (pos1 == std::string::npos) {
     return result; // Invalid format
   }
-  
+
   std::string type = signal.substr(0, pos1);
-  
+
   if (type == "PITCH") {
     result.type = ParsedSignal::Type::Pitch;
 
@@ -140,8 +197,11 @@ ParsedSignal Pinetime::Controllers::ParseSignal(const std::string& signal) {
   } else if (type == "PLAY") {
     result.type = ParsedSignal::Type::Play;
     result.playCode = signal.substr(pos1 + 1);
+  } else if (signal == "CONNECT") {
+    // Handshake message from iOS to trigger pairing - acknowledge silently
+    result.type = ParsedSignal::Type::Connect;
   }
-  
+
   return result;
 }
 

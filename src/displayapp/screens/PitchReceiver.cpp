@@ -19,6 +19,13 @@ PitchReceiver::PitchReceiver(Controllers::PitchCallService& pitchCallService,
   // Set black background
   lv_obj_set_style_local_bg_color(lv_scr_act(), LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, COLOR_BG);
 
+  // Create device ID label in top-right corner
+  idLabel = lv_label_create(lv_scr_act(), nullptr);
+  lv_label_set_text(idLabel, pitchCallService.GetShortId());
+  lv_obj_set_style_local_text_color(idLabel, LV_LABEL_PART_MAIN, LV_STATE_DEFAULT, COLOR_GRAY);
+  lv_obj_set_style_local_text_font(idLabel, LV_LABEL_PART_MAIN, LV_STATE_DEFAULT, &jetbrains_mono_bold_20);
+  lv_obj_align(idLabel, lv_scr_act(), LV_ALIGN_IN_TOP_RIGHT, -10, 6);
+
   // Create waiting label
   waitingLabel = lv_label_create(lv_scr_act(), nullptr);
   lv_label_set_text(waitingLabel, "Waiting for\nsignal...");

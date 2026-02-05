@@ -49,7 +49,7 @@ NimbleController::NimbleController(Pinetime::System::SystemTask& systemTask,
     heartRateService {*this, heartRateController},
     motionService {*this, motionController},
     fsService {systemTask, fs},
-    pitchCallService {systemTask},
+    pitchCallService {systemTask, bleController},
     serviceDiscovery({&currentTimeClient, &alertNotificationClient}) {
 }
 

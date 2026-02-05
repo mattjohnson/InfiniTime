@@ -35,6 +35,7 @@ namespace Pinetime {
         lv_obj_t* timerArc;       // Countdown arc indicator
         lv_obj_t* zoneGrid;       // Visual zone grid
         lv_obj_t* zoneHighlight;  // Highlighted zone
+        lv_obj_t* idLabel;        // Device short ID in top-right corner
 
         lv_task_t* refreshTask;
 
